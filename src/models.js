@@ -1,0 +1,14 @@
+(function(root){
+'use strict';
+const F=typeof module!=='undefined'&&module.exports?require('./features.js'):root.LabFeatures;
+const VERSION='539-model-lab-v2.0.0';
+const MODELS=[{id:'A',name:'30期熱號',detail:'Baseline Model #1'},{id:'B',name:'高遺漏',detail:'Missing / Cold'},{id:'C',name:'短期趨勢',detail:'Short-term Momentum'},{id:'D',name:'長短期混合',detail:'Feature Weighted'},{id:'E',name:'共現模型',detail:'Co-occurrence'},{id:'F',name:'Ensemble',detail:'A–E Weighted Scores'},{id:'G',name:'Pure RNG',detail:'Control Group'}];
+const DEFAULT={features:{f10:1,f30:1,f100:1,missing:0.5,trend:1,co:0.5,repeat:0.25,parity:0.25,size:0.25,segment:0.25},ensemble:{A:1,B:1,C:1,D:1,E:1}};
+function config(value=DEFAULT){const out={features:{},ensemble:{}};for(const group of ['features','ensemble']){for(const key of Object.keys(DEFAULT[group])){const v=value[group]?.[key];if(typeof v!=='number'||!Number.isFinite(v)||v<0||v>10)throw Error('權重須為0至10之間的數字。');out[group][key]=v}if(!Object.values(out[group]).some(v=>v>0))throw Error('每組權重至少需要一個大於0。')}return out}
+// Keep the exact legacy tie order. The seed never depends on answers or measured performance.
+function shuffle(period){let seed=2166136261;for(const c of '539-fixed-v1:'+period)seed=Math.imul(seed^c.charCodeAt(0),16777619)>>>0;function random(){seed=(seed+0x6D2B79F5)>>>0;let t=seed;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296}const a=Array.from({length:39},(_,i)=>i+1);for(let i=38;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function rank(scores,order){return order.map(number=>({number,score:scores[number-1]})).sort((a,b)=>b.score-a.score)}
+function predictions(past,period,settings=DEFAULT){const cfg=config(settings),features=F.engine(past,period),order=shuffle(period),s=features.scaled,r=features.raw,values={};values.A=s.map(x=>x.f30);values.B=s.map(x=>x.missing);values.C=s.map(x=>(x.f10+x.trend)/2);const sum=Object.values(cfg.features).reduce((a,b)=>a+b,0);values.D=s.map(x=>F.KEYS.reduce((a,k)=>a+x[k]*cfg.features[k],0)/sum);values.E=s.map(x=>x.co);const total=Object.values(cfg.ensemble).reduce((a,b)=>a+b,0);values.F=s.map((_,i)=>Object.keys(cfg.ensemble).reduce((a,k)=>a+values[k][i]*cfg.ensemble[k],0)/total);values.G=Array(39);order.forEach((n,i)=>values.G[n-1]=(38-i)/38);const rankings={};for(const m of MODELS)rankings[m.id]=rank(values[m.id],order);return {period,features,rankings,config:cfg,version:VERSION}}
+function configId(cfg){const value=JSON.stringify(config(cfg));let h=2166136261;for(const c of value)h=Math.imul(h^c.charCodeAt(0),16777619)>>>0;return 'cfg-'+h.toString(16).padStart(8,'0')}
+const api={VERSION,MODELS,DEFAULT,config,configId,shuffle,predictions};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.LabModels=api;
+})(typeof window!=='undefined'?window:globalThis);
